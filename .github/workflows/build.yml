@@ -38,6 +38,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref_name }}
           path: repo
 
       - name: Check version
@@ -135,3 +136,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           message: "update: bump translate version to $VERSION"
           directory: 'repo'
+          branch: ${{ github.ref_name }}
