@@ -1,0 +1,140 @@
+name: Update Documents
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '5 4 */7 * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        version:
+          - 4.x
+        language:
+          - zh_CN
+          - uk
+          - de
+    env:
+      READTHEDOCS_LANGUAGE: ${{ matrix.language }}
+    steps:
+      - name: Translate env
+        run: |
+          LANGUAGE_CODE=
+          if [[ "$READTHEDOCS_LANGUAGE" -eq 'zh_CN' ]]; then
+            LANGUAGE_CODE=zh_Hans
+          elif [[ "$READTHEDOCS_LANGUAGE" -eq 'zh_TW' ]]; then
+            LANGUAGE_CODE=zh_Hant
+          else 
+            LANGUAGE_CODE="$READTHEDOCS_LANGUAGE"
+          fi
+          echo "LANGUAGE_CODE=$LANGUAGE_CODE" >> $GITHUB_ENV
+      
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Check version
+        id: checkver
+        run: |
+          version=$(curl -s "https://hosted.weblate.org/api/translations/godot-engine/godot-docs/$LANGUAGE_CODE/statistics/" | jq -r '.last_change')
+          last_version=$(cat repo/version)
+          if [[ $version -eq last_version ]]; then
+            echo "no update detected, exit workflow"
+            exit 0
+          fi
+          
+          echo $version > repo/version
+          echo "VERSION=$version" >> $GITHUB_ENV
+      
+      - name: Checkout l10n
+        uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot-docs-l10n
+          ref: ${{ matrix.version }}
+          submodules: 'recursive'
+          path: l10n
+
+      - name: Get Python version
+        id: pythonv
+        run: |
+          echo "PYTHON_VERSION=$(python --version)" >> $GITHUB_OUTPUT
+
+      - name: Restore cached virtualenv
+        uses: actions/cache/restore@v4
+        with:
+          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          path: l10n/docs/.venv
+
+      - name: Install dependencies
+        run: |
+          cd l10n/docs
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install setuptools
+          python -m pip install -r requirements.txt
+          echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+          sudo apt update
+          sudo apt install -y parallel libwebp7 imagemagick
+
+      - name: Save virtualenv cache
+        uses: actions/cache/save@v4
+        with:
+          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          path: l10n/docs/.venv
+
+      - name: Sphinx - Build
+        run: |
+          cd l10n/docs
+
+          # Convert WebP images to PNG and replace references, so that ePub readers can display those images.
+          # The ePub 3.0 specification has WebP support, but it's not widely supported by apps and e-readers yet.
+          shopt -s globstar nullglob
+          parallel --will-cite convert {} {.}.png ::: {about,community,contributing,getting_started,img,tutorials}/**/*.webp
+          parallel --will-cite sed -i "s/\\.webp$/\\.png/g" ::: {about,community,contributing,getting_started,tutorials}/**/*.rst
+
+          # Remove banners at the top of each page when building `latest`.
+          sed -i 's/"godot_is_latest": True/"godot_is_latest": False/' conf.py
+          sed -i 's/"godot_show_article_status": True/"godot_show_article_status": False/' conf.py
+
+          make SPHINXOPTS='--color -j 4' epub
+          mv _build/epub/GodotEngine.epub _build/epub/GodotEngine-${{ matrix.language }}.epub
+
+      - name: Generate Release Info
+        id: generation
+        run: |
+          data=()
+          url="https://hosted.weblate.org/api/translations/godot-engine/godot-docs/$LANGUAGE_CODE/changes/?timestamp_after=$VERSION&page_size=1000"
+          while [[ ! -n "$url" ]]; do
+            resp=$(curl -s --header "Authorization: Bearer ${{ secrets.WEBLATE_TOKEN }}" $url)
+            url=$(echo $resp | jq -r '.next')
+            data+=$(echo $resp | jq -r '.results[].url')
+          done
+          cat << EOF > release_body
+          # Update at $(date -d $VERSION '+%Y-%m-%d')
+
+          # Translate Changes:
+          $(printf '%s\n' ${data[@]})
+          EOF
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.version }}
+          body_path: release_body
+          files: |
+            l10n/docs/_build/epub/GodotEngine-${{ matrix.language }}.epub
+
+      - name: Update version
+        uses: actions-js/push@v1.5
+        with: 
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          message: "update: bump translate version to $VERSION"
+          directory: 'repo'
