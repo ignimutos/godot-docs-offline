@@ -72,12 +72,14 @@ jobs:
           echo "PYTHON_VERSION=$(python --version)" >> $GITHUB_OUTPUT
 
       - name: Restore cached virtualenv
+        id: restore_cache
         uses: actions/cache/restore@v4
         with:
-          key: venv-${{ matrix.language }}-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
           path: l10n/docs/.venv
 
       - name: Install dependencies
+        if: steps.restore_cache.outputs.cache-hit != 'true'
         run: |
           cd l10n/docs
           python -m venv .venv
@@ -90,9 +92,10 @@ jobs:
           sudo apt install -y parallel libwebp7 imagemagick
 
       - name: Save virtualenv cache
+        if: steps.restore_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          key: venv-${{ matrix.language }}-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
           path: l10n/docs/.venv
 
       - name: Sphinx - Build
