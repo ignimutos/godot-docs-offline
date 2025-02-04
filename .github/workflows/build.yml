@@ -41,26 +41,34 @@ jobs:
           ref: ${{ github.ref_name }}
           path: repo
 
-      - name: Check version
-        id: checkver
+      - name: PreCheck
         run: |
           version=$(curl -s "https://hosted.weblate.org/api/translations/godot-engine/godot-docs/$LANGUAGE_CODE/statistics/" | jq -r '.last_change')
-          last_version=$(cat repo/version)
+          last_version=$(cat repo/version/${{ matrix.language }})
           if [[ $version -eq last_version ]]; then
             echo "no update detected, exit workflow"
             exit 0
           fi
           
-          echo $version > repo/version
+          echo $version > repo/version/${{ matrix.language }}
           echo "VERSION=$version" >> $GITHUB_ENV
+
+          latest_branch=$(gh api repos/godotengine/godot-docs/branches | jq -r '.[].name' | grep $(echo ${{ matrix.version }} | cut -d '.' -f 1) | tail -1)
+          echo "DOC_BRANCH=$latest_branch" >> $GITHUB_ENV
       
       - name: Checkout l10n
         uses: actions/checkout@v4
         with:
           repository: godotengine/godot-docs-l10n
           ref: ${{ matrix.version }}
-          submodules: 'recursive'
           path: l10n
+      
+      - name: Checkout docs
+        uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot-docs
+          ref: ${{ env.DOC_BRANCH }}
+          path: l10n/docs
       
       - name: Special Process to zh_CN
         if: ${{ matrix.language == 'zh_CN' }}
@@ -89,7 +97,7 @@ jobs:
           echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
           sudo apt update
-          sudo apt install -y parallel libwebp7 imagemagick
+          sudo apt install -y parallel libwebp7 imagemagick zip
 
       - name: Save virtualenv cache
         if: steps.restore_cache.outputs.cache-hit != 'true'
@@ -101,6 +109,12 @@ jobs:
       - name: Sphinx - Build
         run: |
           cd l10n/docs
+          make SPHINXOPTS='--color -j 8' html
+          tar -czvf _build/html/GodotEngine-${{ matrix.language }}.html.tar.gz _build/html/*
+          cd _build/html
+          tar -czvf GodotEngine-zh_CN.html.tar.gz .
+          zip -r GodotEngine-zh_CN.zip . -x ".venv/*"
+          cd ../..
 
           # Convert WebP images to PNG and replace references, so that ePub readers can display those images.
           # The ePub 3.0 specification has WebP support, but it's not widely supported by apps and e-readers yet.
@@ -112,7 +126,7 @@ jobs:
           sed -i 's/"godot_is_latest": True/"godot_is_latest": False/' conf.py
           sed -i 's/"godot_show_article_status": True/"godot_show_article_status": False/' conf.py
 
-          make SPHINXOPTS='--color -j 4' epub
+          make SPHINXOPTS='--color -j 8' epub
           mv _build/epub/GodotEngine.epub _build/epub/GodotEngine-${{ matrix.language }}.epub
 
       - name: Generate Release Info
@@ -128,6 +142,7 @@ jobs:
           body_path: release_body
           files: |
             l10n/docs/_build/epub/GodotEngine-${{ matrix.language }}.epub
+            l10n/docs/_build/html/GodotEngine-${{ matrix.language }}.zip
 
       - name: Update version
         uses: actions-js/push@v1.5
