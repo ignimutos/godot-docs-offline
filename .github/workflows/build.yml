@@ -79,7 +79,6 @@ jobs:
           path: l10n/docs/.venv
 
       - name: Install dependencies
-        if: steps.restore_cache.outputs.cache-hit != 'true'
         run: |
           cd l10n/docs
           python -m venv .venv
