@@ -119,7 +119,7 @@ jobs:
 
       - name: Release
         uses: softprops/action-gh-release@v2
-        if: ${{ var.TEST != 'true' }}
+        if: ${{ vars.TEST != 'true' }}
         with:
           tag_name: ${{ matrix.version }}
           body_path: release_body
@@ -128,7 +128,7 @@ jobs:
 
       - name: Update version
         uses: actions-js/push@v1.5
-        if: ${{ var.TEST != 'true' }}
+        if: ${{ vars.TEST != 'true' }}
         with: 
           github_token: ${{ secrets.GITHUB_TOKEN }}
           message: "update: bump translate version to $VERSION"
