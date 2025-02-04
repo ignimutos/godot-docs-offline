@@ -60,6 +60,11 @@ jobs:
           ref: ${{ matrix.version }}
           submodules: 'recursive'
           path: l10n
+      
+      - name: Special Process to zh_CN
+        if: ${{ matrix.language == 'zh_CN' }}
+        run: |
+          cp -rf l10n/classes/zh_CN/* l10n/docs/classes/
 
       - name: Get Python version
         id: pythonv
@@ -69,7 +74,7 @@ jobs:
       - name: Restore cached virtualenv
         uses: actions/cache/restore@v4
         with:
-          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          key: venv-${{ matrix.language }}-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
           path: l10n/docs/.venv
 
       - name: Install dependencies
@@ -87,7 +92,7 @@ jobs:
       - name: Save virtualenv cache
         uses: actions/cache/save@v4
         with:
-          key: venv-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
+          key: venv-${{ matrix.language }}-${{ runner.os }}-${{ steps.pythonv.outputs.PYTHON_VERSION }}-${{ hashFiles('l10n/docs/requirements.txt') }}
           path: l10n/docs/.venv
 
       - name: Sphinx - Build
@@ -110,22 +115,11 @@ jobs:
       - name: Generate Release Info
         id: generation
         run: |
-          data=()
-          url="https://hosted.weblate.org/api/translations/godot-engine/godot-docs/$LANGUAGE_CODE/changes/?timestamp_after=$VERSION&page_size=1000"
-          while [[ ! -n "$url" ]]; do
-            resp=$(curl -s --header "Authorization: Bearer ${{ secrets.WEBLATE_TOKEN }}" $url)
-            url=$(echo $resp | jq -r '.next')
-            data+=$(echo $resp | jq -r '.results[].url')
-          done
-          cat << EOF > release_body
-          # Update at $(date -d $VERSION '+%Y-%m-%d')
-
-          # Translate Changes:
-          $(printf '%s\n' ${data[@]})
-          EOF
+          echo "update at $(date -d $VERSION '+%Y-%m-%d')" > release_body
 
       - name: Release
         uses: softprops/action-gh-release@v2
+        if: ${{ var.TEST != 'true' }}
         with:
           tag_name: ${{ matrix.version }}
           body_path: release_body
@@ -134,6 +128,7 @@ jobs:
 
       - name: Update version
         uses: actions-js/push@v1.5
+        if: ${{ var.TEST != 'true' }}
         with: 
           github_token: ${{ secrets.GITHUB_TOKEN }}
           message: "update: bump translate version to $VERSION"
