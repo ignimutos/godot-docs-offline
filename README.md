@@ -4,4 +4,4 @@
 
 Set Runner Variable `TARGET_LANGUAGE=$Language`,then start the action.
 
-For example: `TARGET_LANGUAGE=zh_Hans,uk,de`
+For example: `TARGET_LANGUAGE=zh_CN,uk,de`
