@@ -201,8 +201,10 @@ jobs:
       - name: Add Tag
         run: |
           cd repo
-          git tag 4.3 -f
-          git push --tag
+          if ! git ls-remote --tags origin | grep -q "refs/tags/$DOC_VERSION"; then
+            git tag $DOC_VERSION
+            git push --tag
+          fi
 
       - name: Release
         uses: softprops/action-gh-release@v2
