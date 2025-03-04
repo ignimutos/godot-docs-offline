@@ -2,8 +2,8 @@ name: Build Documents
 
 env:
   TZ: UTC
-  I10N_VERSION: 4.3
-  DOC_VERSION: 4.3
+  I10N_VERSION: 4.x
+  DOC_VERSION: 4.4
   GH_TOKEN: ${{ github.token }}
   TARGET_LANGUAGE: ${{ vars.TARGET_LANGUAGE || 'zh_CN' }}
 
